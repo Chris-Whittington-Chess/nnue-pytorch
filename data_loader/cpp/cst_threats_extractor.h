@@ -6,7 +6,7 @@
 // that also compiles into CST.
 #pragma once
 #include "training_data_loader_internal.h"
-#include "threat_reference.h"   // from threat_encoder/ (added to the include path)
+#include "threat_encoder.h"   // encode + tables, from threat_encoder/ (self-owned)
 
 struct CstThreatsExtractor : IFeatureExtractor {
     int inputs() const override;

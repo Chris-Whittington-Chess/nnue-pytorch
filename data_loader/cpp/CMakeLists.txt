@@ -11,6 +11,12 @@ string(TOUPPER "${CMAKE_BUILD_TYPE}" UPPER_BUILD_TYPE)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ---- self-owned threat encoder (Bucket 1), lives outside the GPL tree ----
+set(THREAT_ENCODER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../threat_encoder")
+set(THREAT_ENCODER_SRC
+    "${THREAT_ENCODER_DIR}/threat_encoder.cpp"
+    "${THREAT_ENCODER_DIR}/threat_reference.cpp")
+
 set(CMAKE_CXX_FLAGS_DEBUG "-g -march=native")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -O3 -march=native -DNDEBUG")
@@ -22,7 +28,8 @@ set(PGO_INPUT ""
     CACHE STRING "Input file passed to training_data_loader_pgo_gen for profile generation")
 
 # STATISTICS REPORT
-add_executable(training_data_loader_report training_data_loader.cpp training_data_loader_abi.cpp training_data_loader_bench.cpp)
+add_executable(training_data_loader_report training_data_loader.cpp training_data_loader_abi.cpp training_data_loader_bench.cpp cst_threats_extractor.cpp ${THREAT_ENCODER_SRC})
+target_include_directories(training_data_loader_report PRIVATE ${THREAT_ENCODER_DIR})
 target_compile_definitions(training_data_loader_report PRIVATE NNUE_LOADER_STATISTICS)
 
 target_link_libraries(training_data_loader_report
@@ -91,7 +98,8 @@ find_package(Threads REQUIRED)
 
 # ---- Targets ----
 
-add_library(training_data_loader SHARED training_data_loader.cpp training_data_loader_abi.cpp)
+add_library(training_data_loader SHARED training_data_loader.cpp training_data_loader_abi.cpp cst_threats_extractor.cpp ${THREAT_ENCODER_SRC})
+target_include_directories(training_data_loader PRIVATE ${THREAT_ENCODER_DIR})
 target_compile_options(training_data_loader PRIVATE)
 target_link_libraries(training_data_loader PRIVATE Threads::Threads)
 

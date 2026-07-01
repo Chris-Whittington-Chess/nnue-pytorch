@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from .composed import ComposedFeatureTransformer
 from .full_threats import FullThreats
+from .threats_v1 import ThreatsV1
 from .halfka_v2_hm import HalfKav2Hm
 from .input_feature import InputFeature
 
@@ -14,6 +15,7 @@ from typing import Annotated
 _FEATURE_COMPONENTS: dict[str, type[InputFeature]] = {
     "HalfKAv2_hm^": HalfKav2Hm,
     "Full_Threats": FullThreats,
+    "ThreatsV1": ThreatsV1,
 }
 
 
@@ -53,6 +55,7 @@ __all__ = [
     "ComposedFeatureTransformer",
     "HalfKav2Hm",
     "FullThreats",
+    "ThreatsV1",
     "InputFeature",
     "get_feature_cls",
     "get_available_features",

@@ -1,4 +1,5 @@
 #include "training_data_loader_internal.h"
+#include "cst_threats_extractor.h"
 
 #include <iostream>
 #include <algorithm>
@@ -362,6 +363,8 @@ static std::unique_ptr<IFeatureExtractor> make_single_extractor(std::string_view
         return std::make_unique<HalfKAv2_hmExtractor>();
     if (name == "Full_Threats")
         return std::make_unique<FullThreatsExtractor>();
+    if (name == "ThreatsV1")
+        return std::make_unique<CstThreatsExtractor>();
     return nullptr;
 }
 

@@ -22,7 +22,7 @@ class ThreatsV1(InputFeature):
     HASH = 0x54563031  # "TV01"; distinct per feature, tags the exported net
     FEATURE_NAME = "ThreatsV1"
     INPUT_FEATURE_NAME = "ThreatsV1"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 256
+    MAX_ACTIVE_FEATURES = 96  # cap; measured max active over 3.3M real positions = 70
 
     NUM_INPUTS = 75320
     NUM_REAL_FEATURES = 75320

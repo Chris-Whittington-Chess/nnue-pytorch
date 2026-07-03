@@ -19,13 +19,13 @@ class ThreatsV1(InputFeature):
     version name on BOTH sides and retrain; old nets are incompatible.
     """
 
-    HASH = 0x54563031  # "TV01"; distinct per feature, tags the exported net
+    HASH = 0x54563041  # "TV0A" (no-king variant); tags the exported net, distinct from 75320 nets
     FEATURE_NAME = "ThreatsV1"
     INPUT_FEATURE_NAME = "ThreatsV1"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 96  # cap; measured max active over 3.3M real positions = 70
+    MAX_ACTIVE_FEATURES = 96  # cap; fewer now (king attacker dropped)
 
-    NUM_INPUTS = 75320
-    NUM_REAL_FEATURES = 75320
+    NUM_INPUTS = 66920         # king-attacker dropped (was 75320)
+    NUM_REAL_FEATURES = 66920
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

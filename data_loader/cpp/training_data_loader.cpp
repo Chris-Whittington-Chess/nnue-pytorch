@@ -365,6 +365,8 @@ static std::unique_ptr<IFeatureExtractor> make_single_extractor(std::string_view
         return std::make_unique<FullThreatsExtractor>();
     if (name == "ThreatsV1")
         return std::make_unique<CstThreatsExtractor>();
+    if (name == "AttacksV3KNP")
+        return std::make_unique<CstThreatsExtractor>();  // V3 extractor (ENCODER_VERSION AttacksV3KNP)
     return nullptr;
 }
 

@@ -1,6 +1,10 @@
 #include "training_data_loader_internal.h"
 #include "training_data_loader_abi.h"
 
+#ifdef _WIN32
+#include <cstdio>   // _setmaxstdio
+#endif
+
 using namespace binpack;
 using namespace chess;
 
@@ -58,6 +62,9 @@ NNUE_API SparseBatchStream* NNUE_CDECL create_sparse_batch_stream(const char* fe
                                                              bool                 cyclic,
                                                              DataloaderSkipConfig config,
                                                              DataloaderDDPConfig  ddp_config) {
+#ifdef _WIN32
+    _setmaxstdio(8192);  // CRT default caps open FILE handles at 512; binpack collections exceed it
+#endif
     auto skipPredicate = make_skip_predicate(config);
     auto filenames_vec = std::vector<std::string>(filenames, filenames + num_files);
 

@@ -8,6 +8,7 @@
 //     the oracle full_encode() exactly, including duplicates -> NO dedup here.
 //   THREAT  (B/R/Q): attacks landing on occupied non-king targets, via encode() (V1 scheme).
 #include "cst_threats_extractor.h"
+#include "threat_buildpin.h"   // shared BuildPinData port + emit_engine_threats
 
 #include <atomic>
 #include <cstdio>
@@ -95,4 +96,44 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
         }
     }
     return {k, T.NUM_INPUTS};
+}
+
+// ---- EngineThreats ---------------------------------------------------------------------------
+
+namespace {
+constexpr int MAX_ACTIVE_ET = 16;   // measured max 9 (both sides, both blocks) + margin
+void warn_truncate_et() {
+    static std::atomic<bool> warned{false};
+    if (!warned.exchange(true))
+        std::fprintf(stderr, "[EngineThreatsExtractor] active features exceeded MAX_ACTIVE %d; "
+                             "truncating -- raise MAX_ACTIVE_ET.\n", MAX_ACTIVE_ET);
+}
+}  // namespace
+
+int EngineThreatsExtractor::inputs() const { return threats::ENGINE_THREAT_INPUTS; }
+int EngineThreatsExtractor::max_active_features() const { return MAX_ACTIVE_ET; }
+
+std::pair<int, int> EngineThreatsExtractor::fill_features_sparse(
+    const TrainingDataEntry& e, int* features, float* values, Color color) const {
+
+    const Position& pos = e.pos;
+
+    // Build per-color, per-type bitboards for the shared port (threats:: type order == loader's).
+    uint64_t bb[2][6] = {};
+    for (Square s : pos.piecesBB()) {
+        const Piece p = pos.pieceAt(s);
+        bb[static_cast<int>(p.color())][static_cast<int>(p.type())] |= (uint64_t(1) << static_cast<int>(s));
+    }
+    const int king_sq[2] = { static_cast<int>(pos.kingSquare(Color::White)),
+                             static_cast<int>(pos.kingSquare(Color::Black)) };
+    const int persp = static_cast<int>(color);
+
+    int k = 0;
+    threats::emit_engine_threats(bb, king_sq, persp, [&](int idx) {
+        if (k >= MAX_ACTIVE_ET) { warn_truncate_et(); return; }
+        features[k] = idx;
+        values[k]   = 1.0f;
+        ++k;
+    });
+    return { k, threats::ENGINE_THREAT_INPUTS };
 }

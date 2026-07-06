@@ -367,6 +367,8 @@ static std::unique_ptr<IFeatureExtractor> make_single_extractor(std::string_view
         return std::make_unique<CstThreatsExtractor>();
     if (name == "AttacksV3KNP")
         return std::make_unique<CstThreatsExtractor>();  // V3 extractor (ENCODER_VERSION AttacksV3KNP)
+    if (name == "EngineThreats")
+        return std::make_unique<EngineThreatsExtractor>();  // BuildPinData threats/lesserthreats
     return nullptr;
 }
 

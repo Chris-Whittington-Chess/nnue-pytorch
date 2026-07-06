@@ -16,3 +16,14 @@ struct CstThreatsExtractor : IFeatureExtractor {
                                              float*      values,
                                              chess::Color color) const override;
 };
+
+// EngineThreats: victim-keyed features from the engine's BuildPinData threats[]/lesserthreats[]
+// bitboards, computed by the shared port (threat_buildpin.h) off the dataloader Position.
+struct EngineThreatsExtractor : IFeatureExtractor {
+    int inputs() const override;
+    int max_active_features() const override;
+    std::pair<int, int> fill_features_sparse(const struct binpack::TrainingDataEntry& e,
+                                             int*        features,
+                                             float*      values,
+                                             chess::Color color) const override;
+};

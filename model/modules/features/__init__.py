@@ -6,6 +6,7 @@ from .composed import ComposedFeatureTransformer, combine_input_features
 from .full_threats import FullThreats
 from .threats_v1 import ThreatsV1
 from .attacks_v3_knp import AttacksV3KNP
+from .engine_threats import EngineThreats
 from .halfka_v2_hm import HalfKav2Hm
 from .input_feature import InputFeature
 
@@ -18,6 +19,7 @@ _FEATURE_COMPONENTS: dict[str, type[InputFeature]] = {
     "Full_Threats": FullThreats,
     "ThreatsV1": ThreatsV1,
     "AttacksV3KNP": AttacksV3KNP,
+    "EngineThreats": EngineThreats,
 }
 
 

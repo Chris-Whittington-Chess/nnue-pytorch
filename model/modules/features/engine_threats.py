@@ -26,13 +26,13 @@ class EngineThreats(InputFeature):
       * MAX_ACTIVE_FEATURES == EngineThreatsExtractor MAX_ACTIVE_ET
     """
 
-    HASH = 0x45543031  # "ET01"; tags the exported net, distinct from AttacksV3KNP (0x41563350)
+    HASH = 0x45543032  # "ET02"; 3-block (threats / lesserthreats|pawnthreats / equalexchange). ET01 (2-block) superseded.
     FEATURE_NAME = "EngineThreats"
     INPUT_FEATURE_NAME = "EngineThreats"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 16              # matches EngineThreatsExtractor MAX_ACTIVE_ET (measured max 9)
+    MAX_ACTIVE_FEATURES = 24              # matches EngineThreatsExtractor MAX_ACTIVE_ET (3-block measured max ~12)
 
-    NUM_INPUTS = 1536
-    NUM_REAL_FEATURES = 1536
+    NUM_INPUTS = 2304
+    NUM_REAL_FEATURES = 2304
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

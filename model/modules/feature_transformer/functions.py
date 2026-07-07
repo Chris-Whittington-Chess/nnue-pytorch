@@ -23,9 +23,12 @@ def _torch_sparse_linear(feature_indices, feature_values, weight, bias):
     batch_size, max_active = feature_indices.shape
     mask = feature_indices >= 0
 
+    # feature_values None => all-ones: per-sample weight is just the padding mask.
+    _psw = mask if feature_values is None else feature_values * mask
+
     if feature_indices.device.type == "mps":
         safe_indices = feature_indices.clamp(min=0).long().reshape(-1)
-        per_sample_weights = (feature_values * mask).to(weight.dtype).reshape(-1, 1)
+        per_sample_weights = _psw.to(weight.dtype).reshape(-1, 1)
         gathered_weight = F.embedding(safe_indices, weight)
         output = (gathered_weight * per_sample_weights).reshape(
             batch_size, max_active, weight.shape[1]
@@ -33,7 +36,7 @@ def _torch_sparse_linear(feature_indices, feature_values, weight, bias):
         return output + bias
 
     safe_indices = feature_indices.clamp(min=0).long().reshape(-1)
-    per_sample_weights = (feature_values * mask).reshape(-1)
+    per_sample_weights = _psw.to(weight.dtype).reshape(-1)
     offsets = torch.arange(
         0,
         batch_size * max_active,
@@ -154,6 +157,13 @@ class SparseLinearFunction:
     """
     @staticmethod
     def apply(feature_indices, feature_values, weight, bias):
+        # feature_values is None when the loader elided the all-1.0 value stream. Rebuild
+        # it ON-DEVICE from the padding pattern: 1.0 at real indices, 0.0 at padding
+        # (index<0). Bit-identical to the former stream but computed on the GPU from the
+        # already-resident indices -> no CPU pin + no H2D of a 1.0 array. Keeps the fast
+        # cupy kernel path (which dereferences values), unlike routing None to the fallback.
+        if feature_values is None:
+            feature_values = (feature_indices >= 0).to(weight.dtype)
         if _HAS_CUPY_KERNELS and feature_indices.is_cuda:
             return _CudaSparseLinearFunction.apply(
                 feature_indices, feature_values, weight, bias

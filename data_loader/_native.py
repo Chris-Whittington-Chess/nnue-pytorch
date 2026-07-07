@@ -34,22 +34,13 @@ class SparseBatch(ctypes.Structure):
     ]
 
     def get_tensors(self, device):
-        white_values = _pin_and_move(
-            torch.from_numpy(
-                np.ctypeslib.as_array(
-                    self.white_values, shape=(self.size, self.max_active_features)
-                )
-            ),
-            device,
-        )
-        black_values = _pin_and_move(
-            torch.from_numpy(
-                np.ctypeslib.as_array(
-                    self.black_values, shape=(self.size, self.max_active_features)
-                )
-            ),
-            device,
-        )
+        # All feature values are 1.0 (multiplicity is via repeated indices), so the
+        # white_values/black_values streams are pure all-1.0 padding. Skip building /
+        # pinning / transferring them; the FT treats None as all-ones (mask-only),
+        # which is bit-identical to values*mask. Saves ~2*(size*max_active*4) B/batch
+        # of pin+H2D traffic. (The C++ loader still fills them; only Python stops reading.)
+        white_values = None
+        black_values = None
         white_indices = _pin_and_move(
             torch.from_numpy(
                 np.ctypeslib.as_array(

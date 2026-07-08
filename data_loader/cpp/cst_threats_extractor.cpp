@@ -28,7 +28,7 @@ const threats::ThreatTables& tables() {
 // V1 active count), so this is well above V1's measured max of 70. It is a CAP, not a hard
 // bound: a rarer overflow is safely truncated (low-signal tail) with a one-shot warning.
 // The GPU FT kernel pads to this width, so it trades training speed for headroom.
-constexpr int MAX_ACTIVE = 256;   // AttacksV4: KNP control (~90) + QRB dense control (~106) + margin
+constexpr int MAX_ACTIVE = 320;   // AttacksV5: KNP control (~90) + QRB dense control (~106) + BRQ threats + margin
 
 void warn_truncate() {
     static std::atomic<bool> warned{false};
@@ -80,10 +80,9 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
                 ++k;
             }
         } else {
-            // AttacksV4 DENSE slider control (B/R/Q): occupancy-aware attacks keyed by ray-type.
-            // Bishop+Queen -> diagonal rays (RAY_DIAG); Rook+Queen -> orthogonal (RAY_ORTH); a queen
-            // contributes to BOTH. Matches engine enum_slider_control (diagonals=B+Q, manhattans=R+Q).
-            (void)targets;
+            // AttacksV5 (B/R/Q): DENSE slider control (occupancy-aware, ray-type keyed) PLUS the sparse
+            // on-occupied BRQ threats. Bishop+Queen -> RAY_DIAG; Rook+Queen -> RAY_ORTH; queen -> both.
+            // Matches engine enum_slider_control + enum_threats.
             const bool diag = (p.type() == PieceType::Bishop) || (p.type() == PieceType::Queen);
             const bool orth = (p.type() == PieceType::Rook)   || (p.type() == PieceType::Queen);
             if (diag) for (Square to : bb::attacks<PieceType::Bishop>(from, occupied)) {
@@ -93,6 +92,16 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
             }
             if (orth) for (Square to : bb::attacks<PieceType::Rook>(from, occupied)) {
                 const int idx = threats::encode_slider_control(persp, acol, threats::RAY_ORTH, static_cast<int>(to), ksq);
+                if (k >= MAX_ACTIVE) { warn_truncate(); return {k, T.NUM_INPUTS}; }
+                features[k] = idx; values[k] = 1.0f; ++k;
+            }
+            // AttacksV5: PLUS the sparse BRQ threats -- occupancy-aware attacks on occupied non-king victims.
+            for (Square to : (pos.attacks(from) & targets)) {
+                const Piece q   = pos.pieceAt(to);
+                const int   idx = threats::encode(T, persp, acol, atype, static_cast<int>(from),
+                                                  static_cast<int>(q.color()), static_cast<int>(q.type()),
+                                                  static_cast<int>(to), ksq);
+                if (idx < 0) continue;
                 if (k >= MAX_ACTIVE) { warn_truncate(); return {k, T.NUM_INPUTS}; }
                 features[k] = idx; values[k] = 1.0f; ++k;
             }

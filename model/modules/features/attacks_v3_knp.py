@@ -26,13 +26,13 @@ class AttacksV3KNP(InputFeature):
     name on BOTH sides and retrain; nets are permanently tied to an encoder version.
     """
 
-    HASH = 0x41563550  # "AV5P"; AttacksV5 AUGMENT (KNP control folded + QRB dense control + BRQ threats).
-    FEATURE_NAME = "AttacksV3KNP"        # loader/registry key kept as-is (opaque); content is now V5
+    HASH = 0x41563350  # "AV3P"; tags the exported net, distinct from ThreatsV1 (0x54563041)
+    FEATURE_NAME = "AttacksV3KNP"
     INPUT_FEATURE_NAME = "AttacksV3KNP"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 320            # matches CstThreatsExtractor MAX_ACTIVE (KNP + QRB dense + BRQ threats)
+    MAX_ACTIVE_FEATURES = 192            # matches CstThreatsExtractor MAX_ACTIVE (dense KNP control)
 
-    NUM_INPUTS = 58880         # CONTROL 384 (KNP, folds) + SLIDER_CONTROL 256 (QRB dense) + BRQ threats 58240 (live)
-    NUM_REAL_FEATURES = 58880
+    NUM_INPUTS = 58624         # CONTROL 384 + B/R/Q threat blocks (build_tables)
+    NUM_REAL_FEATURES = 58624
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

@@ -17,7 +17,10 @@ class EngineThreats(InputFeature):
       index = (block*2 + victim_side) * (6*64) + victim_type*64 + orient(square)
         block 0 = value-threat (piece attacked by a strictly cheaper enemy)
         block 1 = loose        (own piece attacked but under-defended)
-      NUM_INPUTS = 2 blocks * 2 sides * 6 types * 64 squares = 1536
+        block 2 = equalexchange(even trade available)
+        block 3 = pinned       (piece absolutely pinned to its king)
+        block 4 = pinner       (slider doing an absolute pin)
+      NUM_INPUTS = 5 blocks * 2 sides * 6 types * 64 squares = 3840
 
     Flat sparse feature, no virtual/factorized weights, no fold (it is a genuine LIVE feature).
 
@@ -26,13 +29,13 @@ class EngineThreats(InputFeature):
       * MAX_ACTIVE_FEATURES == EngineThreatsExtractor MAX_ACTIVE_ET
     """
 
-    HASH = 0x45543032  # "ET02"; 3-block (threats / lesserthreats|pawnthreats / equalexchange). ET01 (2-block) superseded.
+    HASH = 0x45543035  # "ET05"; 5-block (threats / loose / equalexchange / pinned / pinner). ET02 (3-block) superseded.
     FEATURE_NAME = "EngineThreats"
     INPUT_FEATURE_NAME = "EngineThreats"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 24              # matches EngineThreatsExtractor MAX_ACTIVE_ET (3-block measured max ~12)
+    MAX_ACTIVE_FEATURES = 32              # matches EngineThreatsExtractor MAX_ACTIVE_ET (5-block; 3-block max was ~12)
 
-    NUM_INPUTS = 2304
-    NUM_REAL_FEATURES = 2304
+    NUM_INPUTS = 3840
+    NUM_REAL_FEATURES = 3840
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

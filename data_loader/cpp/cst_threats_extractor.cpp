@@ -101,7 +101,7 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
 // ---- EngineThreats ---------------------------------------------------------------------------
 
 namespace {
-constexpr int MAX_ACTIVE_ET = 24;   // 3-block (threats/lesser|pawn/equalexch); measured max ~12 both sides + margin
+constexpr int MAX_ACTIVE_ET = 32;   // 5-block (threats/lesser|pawn/equalexch/pinned/pinner); 3-block max was ~12 + margin
 void warn_truncate_et() {
     static std::atomic<bool> warned{false};
     if (!warned.exchange(true))

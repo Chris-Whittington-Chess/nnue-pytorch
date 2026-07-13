@@ -3,6 +3,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .composed import ComposedFeatureTransformer, combine_input_features
+from .multihead import MultiHeadFeatureTransformer, combine_multihead_features
 from .full_threats import FullThreats
 from .threats_v1 import ThreatsV1
 from .attacks_v3_knp import AttacksV3KNP
@@ -24,6 +25,11 @@ _FEATURE_COMPONENTS: dict[str, type[InputFeature]] = {
 
 
 def get_feature_cls(name: str) -> Callable[[int], ComposedFeatureTransformer]:
+    # '|' selects the v5 multi-head arch (3 separate FTs + cross-product gating);
+    # '+' is the v4 composed arch (features summed into one shared accumulator).
+    if "|" in name:
+        components = [_FEATURE_COMPONENTS[p] for p in name.split("|")]
+        return combine_multihead_features(*components)
     parts = name.split("+")
     components = [_FEATURE_COMPONENTS[p] for p in parts]
     return combine_input_features(*components)

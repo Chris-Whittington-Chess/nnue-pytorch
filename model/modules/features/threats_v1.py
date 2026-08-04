@@ -19,13 +19,18 @@ class ThreatsV1(InputFeature):
     version name on BOTH sides and retrain; old nets are incompatible.
     """
 
-    HASH = 0x54563041  # "TV0A" (no-king variant); tags the exported net, distinct from 75320 nets
+    HASH = 0x54563042  # "TV0B" (fan-pruned); distinct from the 66920 and 75320 nets
     FEATURE_NAME = "ThreatsV1"
     INPUT_FEATURE_NAME = "ThreatsV1"  # <- the exact string handed to the C++ loader
     MAX_ACTIVE_FEATURES = 96  # cap; fewer now (king attacker dropped)
 
-    NUM_INPUTS = 66920         # king-attacker dropped (was 75320)
-    NUM_REAL_FEATURES = 66920
+    # Fan-pruned (ENCODER_VERSION "ThreatsV1nkET5fp", 2026-08-04): B->Q and R->Q
+    # dropped -- a bishop/rook attacking a queen is the same physical relation as
+    # the queen attacking back, so it is kept from the queen's side only.
+    # T[BISHOP] and T[ROOK] go 5 -> 4, removing 4*(F[B]+F[R]) = 4*(560+896) = 5824.
+    # Verified against build_tables(): 66920 -> 61096.
+    NUM_INPUTS = 61096         # fan-pruned (was 66920; king-attacker drop was 75320)
+    NUM_REAL_FEATURES = 61096
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

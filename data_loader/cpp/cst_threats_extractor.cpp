@@ -53,7 +53,23 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
     const Bitboard occupied = pos.piecesBB();
     const Bitboard kings    = Bitboard::square(pos.kingSquare(Color::White))
                             | Bitboard::square(pos.kingSquare(Color::Black));
-    const Bitboard targets  = occupied & ~kings;
+    Bitboard targets = occupied & ~kings;
+
+    // C3 filter: emit only where the TARGET is attacked by an enemy of its owner.
+    // Built from the SHARED threats::threatened_mask() rather than pos.attacks(), so
+    // this cannot drift from the oracle or the engine -- three private answers to
+    // "is this square attacked" would diverge on exactly the cases the golden
+    // vectors exist to catch.
+    if (threats::cfg::SKIP_UNATTACKED_TARGETS) {
+        uint64_t bb[2][threats::NUM_PT] = {};
+        for (Square s : occupied) {
+            const Piece q = pos.pieceAt(s);
+            bb[static_cast<int>(q.color())][static_cast<int>(q.type())]
+                |= (1ull << static_cast<int>(s));
+        }
+        const uint64_t keep = threats::threatened_mask(bb, occupied.bits());
+        targets &= Bitboard::fromBits(keep);
+    }
 
     const int persp = static_cast<int>(color);
     const int ksq   = static_cast<int>(pos.kingSquare(color));

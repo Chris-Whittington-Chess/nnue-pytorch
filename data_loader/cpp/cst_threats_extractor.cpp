@@ -97,7 +97,20 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
             }
         } else {
             // THREAT (B/R/Q): occupancy-aware attacks intersected with occupied non-king pieces.
-            Bitboard hits = pos.attacks(from) & targets;
+            // With cfg::XRAY_THREATS the slider also reaches the man BEHIND its first
+            // blocker, emitting the SAME index a direct attack would. Must match the
+            // oracle's threat_attacks_geo() and the engine's piece_attacks() exactly --
+            // three independent implementations, and parity is what proves they agree.
+            const Bitboard direct = pos.attacks(from);
+            Bitboard hits = direct & targets;
+            if (threats::cfg::XRAY_THREATS &&
+                (atype == threats::BISHOP || atype == threats::ROOK || atype == threats::QUEEN)) {
+                const Bitboard blockers = direct & occupied;
+                if (blockers.any()) {
+                    const Bitboard through = bb::attacks(p.type(), from, occupied ^ blockers);
+                    hits |= (through & ~direct) & targets;
+                }
+            }
             for (Square to : hits) {
                 const Piece q   = pos.pieceAt(to);
                 const int   idx = threats::encode(T, persp, acol, atype, static_cast<int>(from),

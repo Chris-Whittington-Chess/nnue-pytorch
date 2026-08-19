@@ -20,22 +20,36 @@ class EngineThreats(InputFeature):
         block 2 = equalexchange(even trade available)
         block 3 = pinned       (piece absolutely pinned to its king)
         block 4 = pinner       (slider doing an absolute pin)
-      NUM_INPUTS = 5 blocks * 2 sides * 6 types * 64 squares = 3840
+        block 5 = safe check   (a check is available; keyed by CHECKER type, LANDING square)
+        block 6 = severe check (the subset leaving the king <= 1 flight square)
+      NUM_INPUTS = 7 blocks * 2 sides * 6 types * 64 squares = 5376
+
+    Blocks 5/6 differ in kind from 0-4: they are keyed by the checker, and the landing square is
+    usually EMPTY, so the piece type cannot be read off the board -- it travels with the datum.
+    They come from the engine's FindSafeChecks (threat_encoder/threat_safecheck.h, proven
+    bit-exact against engine-generated golden vectors), NOT from BuildPinData's victim bitboards.
 
     Flat sparse feature, no virtual/factorized weights, no fold (it is a genuine LIVE feature).
 
-    IMPORTANT -- must stay in lockstep with the C++ encoder:
+    IMPORTANT -- must stay in lockstep with the C++ encoder, and NOTHING ENFORCES IT:
       * NUM_INPUTS          == threats::ENGINE_THREAT_INPUTS
       * MAX_ACTIVE_FEATURES == EngineThreatsExtractor MAX_ACTIVE_ET
+    The values below are the 7-block ones, so the dataloader MUST be compiled with
+    -DSAFECHECK_FEATURES=1. Build it without and the loader emits a 3840-wide space into a
+    5376-wide layer: no error, just 1536 permanently dead columns and blocks 5/6 never learned.
+    Check `selftest.exe`, which prints ENCODER_VERSION -- ThreatsV1nkET7fp is the 7-block build,
+    ThreatsV1nkET5fp the 5-block one.
     """
 
-    HASH = 0x45543035  # "ET05"; 5-block (threats / loose / equalexchange / pinned / pinner). ET02 (3-block) superseded.
+    HASH = 0x45543037  # "ET07"; 7-block (et5 + safe check + severe check). ET05/ET02 superseded.
     FEATURE_NAME = "EngineThreats"
     INPUT_FEATURE_NAME = "EngineThreats"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 32              # matches EngineThreatsExtractor MAX_ACTIVE_ET (5-block; 3-block max was ~12)
+    # MAX_ACTIVE_ET measured over 800,000 perspectives (threat_encoder/et_active_stats.cpp):
+    # mean 2.148, max 24. 48 is ~2x the maximum, the margin the 5-block 32 carried over its 13.
+    MAX_ACTIVE_FEATURES = 48
 
-    NUM_INPUTS = 3840
-    NUM_REAL_FEATURES = 3840
+    NUM_INPUTS = 5376
+    NUM_REAL_FEATURES = 5376
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

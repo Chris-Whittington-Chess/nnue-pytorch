@@ -8,7 +8,8 @@
 //     the oracle full_encode() exactly, including duplicates -> NO dedup here.
 //   THREAT  (B/R/Q): attacks landing on occupied non-king targets, via encode() (V1 scheme).
 #include "cst_threats_extractor.h"
-#include "threat_buildpin.h"   // shared BuildPinData port + emit_engine_threats
+#include "threat_buildpin.h"    // shared BuildPinData port + emit_engine_threats
+#include "threat_safecheck.h"   // shared FindSafeChecks port + emit_engine_threats_all
 
 #include <atomic>
 #include <cstdio>
@@ -130,7 +131,18 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
 // ---- EngineThreats ---------------------------------------------------------------------------
 
 namespace {
-constexpr int MAX_ACTIVE_ET = 32;   // 5-block (threats/lesser|pawn/equalexch/pinned/pinner); 3-block max was ~12 + margin
+// MEASURED, not guessed -- the extractor TRUNCATES above this and silently corrupts every
+// position that exceeds it, so the number has to come from a count. threat_encoder/
+// et_active_stats.cpp over 400,000 unique non-check positions from match/*.pgn (800,000
+// perspectives, 7 blocks):
+//
+//   mean active  2.148        max active  24   (et5 half alone: 13; blocks 5/6 alone: 24)
+//   busiest      8/8/8/2K5/8/8/1Q4Q1/3k4 w   -- two queens hunting a bare king
+//
+// 48 is ~2x the observed maximum, the same margin the 5-block 32 carried over its measured 13.
+// Note the earlier plan's "raise to ~64" was a guess and the measurement says otherwise: the
+// safe-check blocks are SPARSE (live in 25.66% of perspectives, mean 0.656), not bulky.
+constexpr int MAX_ACTIVE_ET = 48;
 void warn_truncate_et() {
     static std::atomic<bool> warned{false};
     if (!warned.exchange(true))
@@ -158,7 +170,10 @@ std::pair<int, int> EngineThreatsExtractor::fill_features_sparse(
     const int persp = static_cast<int>(color);
 
     int k = 0;
-    threats::emit_engine_threats(bb, king_sq, persp, [&](int idx) {
+    // _all: blocks 0-4 from BuildPinData plus, when SAFECHECK_FEATURES is on, blocks 5/6 from
+    // the safe-check port. One ThreatBB serves both. With the macro off this is exactly the
+    // old et5 behaviour.
+    threats::emit_engine_threats_all(bb, king_sq, persp, [&](int idx) {
         if (k >= MAX_ACTIVE_ET) { warn_truncate_et(); return; }
         features[k] = idx;
         values[k]   = 1.0f;

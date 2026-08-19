@@ -17,6 +17,21 @@ set(THREAT_ENCODER_SRC
     "${THREAT_ENCODER_DIR}/threat_encoder.cpp"
     "${THREAT_ENCODER_DIR}/threat_reference.cpp")
 
+# ---- safe-check feature blocks (EngineThreats 5/6) ----
+# This DEFINES the EngineThreats feature space: ON = 7 blocks / 5376 inputs, OFF = 5 / 3840.
+# It must agree with model/modules/features/engine_threats.py, and NOTHING CHECKS THAT -- a
+# mismatch produces no error, just permanently dead columns. Default ON because engine_threats.py
+# now carries the 7-block constants; flip both together or not at all.
+option(SAFECHECK_FEATURES "EngineThreats safe-check blocks 5/6 (7-block feature space)" ON)
+if(SAFECHECK_FEATURES)
+  add_compile_definitions(SAFECHECK_FEATURES=1)
+  message(STATUS "EngineThreats: 7 blocks, 5376 inputs (ThreatsV1nkET7fp)")
+else()
+  add_compile_definitions(SAFECHECK_FEATURES=0)
+  message(STATUS "EngineThreats: 5 blocks, 3840 inputs (ThreatsV1nkET5fp) -- "
+                 "engine_threats.py must be reverted to match")
+endif()
+
 set(CMAKE_CXX_FLAGS_DEBUG "-g -march=native")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -O3 -march=native -DNDEBUG")

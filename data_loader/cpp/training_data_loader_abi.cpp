@@ -1,5 +1,6 @@
 #include "training_data_loader_internal.h"
 #include "training_data_loader_abi.h"
+#include "threat_config.h"
 
 #ifdef _WIN32
 #include <cstdio>   // _setmaxstdio
@@ -94,4 +95,11 @@ NNUE_API void NNUE_CDECL destroy_sparse_batch(SparseBatch* e) {
 
 NNUE_API void NNUE_CDECL destroy_fen_batch(FenBatch* e) {
     delete e;
+}
+
+NNUE_API unsigned NNUE_CDECL nnue_encoder_variant_id() {
+    return (unsigned)threats::ENCODER_VARIANT_ID;
+}
+NNUE_API const char* NNUE_CDECL nnue_encoder_version() {
+    return threats::ENCODER_VERSION;
 }

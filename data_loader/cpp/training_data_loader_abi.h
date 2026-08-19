@@ -46,3 +46,11 @@ NNUE_API SparseBatchStream* NNUE_CDECL create_sparse_batch_stream(const char*   
 
 NNUE_API void         NNUE_CDECL destroy_sparse_batch_stream(SparseBatchStream* stream);
 NNUE_API SparseBatch* NNUE_CDECL fetch_next_sparse_batch(SparseBatchStream* stream);
+
+// Encoder identity of THIS BUILD of the loader -- threats::ENCODER_VARIANT_ID, an FNV-1a
+// hash of ENCODER_VERSION. The trainer stamps it into the exported net so the engine can
+// refuse a net produced by a different encoder variant. It has to come from the DLL rather
+// than from the headers the trainer can read, because the variant is a COMPILE-TIME flag of
+// this DLL: reading a header would report what the source defaults to, not what was built.
+NNUE_API unsigned NNUE_CDECL nnue_encoder_variant_id();
+NNUE_API const char* NNUE_CDECL nnue_encoder_version();

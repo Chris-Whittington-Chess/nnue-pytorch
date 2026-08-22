@@ -142,7 +142,7 @@ namespace {
 // 48 is ~2x the observed maximum, the same margin the 5-block 32 carried over its measured 13.
 // Note the earlier plan's "raise to ~64" was a guess and the measurement says otherwise: the
 // safe-check blocks are SPARSE (live in 25.66% of perspectives, mean 0.656), not bulky.
-constexpr int MAX_ACTIVE_ET = 48;
+constexpr int MAX_ACTIVE_ET = 52;   // +4: the always-active king-pressure section (state + x-ray, per colour)
 void warn_truncate_et() {
     static std::atomic<bool> warned{false};
     if (!warned.exchange(true))

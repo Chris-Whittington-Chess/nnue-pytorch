@@ -23,6 +23,10 @@ class EngineThreats(InputFeature):
         block 5 = safe check   (a check is available; keyed by CHECKER type, LANDING square)
         block 6 = severe check (the subset leaving the king <= 1 flight square)
       NUM_INPUTS = 7 blocks * 2 sides * 6 types * 64 squares = 5376
+                 + king-ring pressure 162 states x 2 sides                 =  324
+                 + x-ray sliders on ring 3 states x 2 sides                =    6
+                                                                            -----
+                                                                             5706
 
     Blocks 5/6 differ in kind from 0-4: they are keyed by the checker, and the landing square is
     usually EMPTY, so the piece type cannot be read off the board -- it travels with the datum.
@@ -41,15 +45,19 @@ class EngineThreats(InputFeature):
     ThreatsV1nkET5fp the 5-block one.
     """
 
-    HASH = 0x45543037  # "ET07"; 7-block (et5 + safe check + severe check). ET05/ET02 superseded.
+    HASH = 0x45544B50  # "ETKP"; 7 blocks + the king-ring pressure section. ET07/ET05/ET02 superseded.
     FEATURE_NAME = "EngineThreats"
     INPUT_FEATURE_NAME = "EngineThreats"  # <- the exact string handed to the C++ loader
     # MAX_ACTIVE_ET measured over 800,000 perspectives (threat_encoder/et_active_stats.cpp):
     # mean 2.148, max 24. 48 is ~2x the maximum, the margin the 5-block 32 carried over its 13.
-    MAX_ACTIVE_FEATURES = 48
+    # +4: the pressure section contributes exactly 4 features per perspective (a state and an
+    # x-ray count for each colour) and is ALWAYS active, unlike blocks 5/6 which are live in
+    # only 25-43% of perspectives. Measured max for the victim-keyed part was 24 over 800,000
+    # perspectives, so 48 + 4 keeps the same 2x margin.
+    MAX_ACTIVE_FEATURES = 52
 
-    NUM_INPUTS = 5376
-    NUM_REAL_FEATURES = 5376
+    NUM_INPUTS = 5706
+    NUM_REAL_FEATURES = 5706
     EXPORT_WEIGHT_DTYPE = torch.int8
 
     def __init__(self, num_outputs: int):

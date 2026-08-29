@@ -51,11 +51,17 @@ class ThreatsV1(InputFeature):
     NUM_REAL_FEATURES = NUM_INPUTS
     EXPORT_WEIGHT_DTYPE = torch.int8
 
+    # flush=True is load-bearing, not tidiness. A training run's stdout is redirected to a
+    # FILE, so it is block-buffered; this banner prints during import, thousands of lines
+    # before the buffer fills, and a run launched on 2026-08-29 showed no banner at all for
+    # its first four minutes. The banner's entire purpose is that a LOG proves which feature
+    # space was trained -- unflushed, it proves nothing exactly when you need it.
     print(
         "[ThreatsV1] CST_PAWN_PRUNE=1 -> B4 pawn reciprocity prune ACTIVE: NUM_INPUTS=59920,"
         " data loader MUST be built with -DPAWN_RECIPROCITY_PRUNE=1 (ThreatsV1nkET5fpPR)"
         if _PAWN_PRUNE else
-        "[ThreatsV1] NUM_INPUTS=61096 (baseline, no pawn prune)"
+        "[ThreatsV1] NUM_INPUTS=61096 (baseline, no pawn prune)",
+        flush=True,
     )
 
     def __init__(self, num_outputs: int):

@@ -21,12 +21,26 @@ class ThreatsV1(InputFeature):
     version name on BOTH sides and retrain; old nets are incompatible.
     """
 
+    # Both build flags are read FIRST, because HASH and NUM_INPUTS below depend on the pair.
+    _PAWN_PRUNE = os.environ.get("CST_PAWN_PRUNE", "0") == "1"
+    _PAWN_PAIRS = os.environ.get("CST_PAWN_PAIRS", "0") == "1"
+
     # HASH separates incompatible feature spaces. "TV0B" = fan-pruned 61096 (distinct from
-    # the 66920 and 75320 nets); "TV0C" = 59920, additionally pawn-reciprocity-pruned (B4).
-    HASH = 0x54563043 if os.environ.get("CST_PAWN_PRUNE", "0") == "1" else 0x54563042
+    # the 66920 and 75320 nets); "TV0C" = 59920, additionally pawn-reciprocity-pruned (B4);
+    # "TV0D" = 64480, B4 prune + B5 pawn pairs (the SF-faithful arm); "TV0E" = 65656, pairs
+    # without the prune. Four spaces, four ids -- a shared id across incompatible widths is
+    # the failure this field exists to prevent.
+    if _PAWN_PAIRS:
+        HASH = 0x54563044 if _PAWN_PRUNE else 0x54563045
+    else:
+        HASH = 0x54563043 if _PAWN_PRUNE else 0x54563042
     FEATURE_NAME = "ThreatsV1"
     INPUT_FEATURE_NAME = "ThreatsV1"  # <- the exact string handed to the C++ loader
-    MAX_ACTIVE_FEATURES = 96  # cap; fewer now (king attacker dropped)
+    # B5 changes the ACTIVE count, not just the width: C(16,2) = 120 pawn pairs on top of the
+    # threats stream. Measured over 327,680 perspectives: mean 62.73, max 168 (threats alone
+    # were mean 14.6, max 49). 96 would truncate a normal opening, so this must track the data
+    # loader's MAX_ACTIVE in cst_threats_extractor.cpp -- 256 when pairs are on.
+    MAX_ACTIVE_FEATURES = 256 if _PAWN_PAIRS else 96  # cap; fewer now (king attacker dropped)
 
     # Fan-pruned (ENCODER_VERSION "ThreatsV1nkET5fp", 2026-08-04): B->Q and R->Q
     # dropped -- a bishop/rook attacking a queen is the same physical relation as
@@ -45,9 +59,16 @@ class ThreatsV1(InputFeature):
     # dead, the other way and indices overflow. The exported net carries the C++ encoder's
     # variant id, so the ENGINE catches a mismatch at load -- but only after a training run.
     # Hence the banner below: a training log should show which space it used.
-    _PAWN_PRUNE = os.environ.get("CST_PAWN_PRUNE", "0") == "1"
+    # B5 PAWN-PAIR SET (2026-08-31), env-driven: CST_PAWN_PAIRS=1. Appends an unordered
+    # pawn-pair section AFTER every attacker block -- C(96,2) = 4,560 indices, keyed by which
+    # two pawns exist rather than by any attack relation. Built as the SF-faithful hedge for
+    # the fork linkage B4 measured at -9.04 +/- 6.99 Elo/node.
+    # Verified against build_tables(): 59920 -> 64480, ENCODER_VERSION "ThreatsV1nkET5fpPRPP".
+    # Same warning as the prune above: this MUST match the -DPAWNPAIR_FEATURES the data loader
+    # was compiled with, and nothing at this layer checks it.
+    _PP_INPUTS = 4560
 
-    NUM_INPUTS = 59920 if _PAWN_PRUNE else 61096
+    NUM_INPUTS = (59920 if _PAWN_PRUNE else 61096) + (_PP_INPUTS if _PAWN_PAIRS else 0)
     NUM_REAL_FEATURES = NUM_INPUTS
     EXPORT_WEIGHT_DTYPE = torch.int8
 
@@ -56,11 +77,15 @@ class ThreatsV1(InputFeature):
     # before the buffer fills, and a run launched on 2026-08-29 showed no banner at all for
     # its first four minutes. The banner's entire purpose is that a LOG proves which feature
     # space was trained -- unflushed, it proves nothing exactly when you need it.
+    # Derived from the flags rather than written out per case: with two independent knobs there
+    # are four spaces, and a hardcoded banner that disagrees with NUM_INPUTS would defeat the
+    # whole point of printing it.
+    _ENC = "ThreatsV1nkET5fp" + ("PR" if _PAWN_PRUNE else "") + ("PP" if _PAWN_PAIRS else "")
     print(
-        "[ThreatsV1] CST_PAWN_PRUNE=1 -> B4 pawn reciprocity prune ACTIVE: NUM_INPUTS=59920,"
-        " data loader MUST be built with -DPAWN_RECIPROCITY_PRUNE=1 (ThreatsV1nkET5fpPR)"
-        if _PAWN_PRUNE else
-        "[ThreatsV1] NUM_INPUTS=61096 (baseline, no pawn prune)",
+        f"[ThreatsV1] CST_PAWN_PRUNE={int(_PAWN_PRUNE)} CST_PAWN_PAIRS={int(_PAWN_PAIRS)}"
+        f" -> NUM_INPUTS={NUM_INPUTS} ({_ENC}), max_active={MAX_ACTIVE_FEATURES}."
+        " The data loader MUST be built with the MATCHING"
+        f" -DPAWN_RECIPROCITY_PRUNE={int(_PAWN_PRUNE)} -DPAWNPAIR_FEATURES={int(_PAWN_PAIRS)}",
         flush=True,
     )
 

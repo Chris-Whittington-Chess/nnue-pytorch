@@ -29,7 +29,22 @@ const threats::ThreatTables& tables() {
 // V1 active count), so this is well above V1's measured max of 70. It is a CAP, not a hard
 // bound: a rarer overflow is safely truncated (low-signal tail) with a one-shot warning.
 // The GPU FT kernel pads to this width, so it trades training speed for headroom.
-constexpr int MAX_ACTIVE = 192;
+//
+// B5 RAISES THIS, and the reason matters more than the number. The pawn-pair section is
+// C(n_pawns, 2): 16 pawns is 120 active features on its own, so 192 would truncate a normal
+// opening -- silently, on the densest and most common positions in the corpus.
+//
+// MEASURED (tools/verify_pawnpairs.py, 327,680 perspectives, prune+pairs):
+//   active/perspective  mean 62.73   max 168      (threats alone were mean 14.6, max 49)
+//   pair features       mean 48.10   max 120      = 76.7% of ALL emitted features
+// Theoretical worst is ~190 (V1's historical threat max of 70, plus 120 pairs), so 256 clears
+// it with a third to spare. NOT 384: the GPU FT kernel pads to this width, so every unused
+// slot is training speed paid for nothing.
+//
+// Note the cost this exposes, and it is the number that decides B5 on the clock: the pair set
+// is +4,560 indices but +48 ACTIVE features on average -- a 4.3x heavier stream. It is the
+// active count, not the index count, that the FT kernel and the engine accumulator pay for.
+constexpr int MAX_ACTIVE = threats::cfg::PAWNPAIR_BLOCKS ? 256 : 192;
 
 void warn_truncate() {
     static std::atomic<bool> warned{false};
@@ -125,6 +140,36 @@ std::pair<int, int> CstThreatsExtractor::fill_features_sparse(
             }
         }
     }
+
+    // ---- B5: PAWN-PAIR SECTION (cfg::PAWNPAIR_BLOCKS) ----------------------------------------
+    // Not an attack relation and not attacker-keyed: the feature is WHICH TWO PAWNS EXIST.
+    // Emitted last, so the indices land in [PP_BASE, NUM_INPUTS) and the threat blocks above are
+    // bit-identical to the non-B5 build.
+    //
+    // Two passes on purpose. Collecting the ids first makes the pair loop O(n^2) over a small
+    // dense array instead of a nested board scan, and it is the same order the engine's static
+    // refresh uses -- the two must agree index-for-index or golden parity fails.
+    if (threats::cfg::PAWNPAIR_BLOCKS) {
+        int ids[16];                        // 8 pawns per side is the hard maximum
+        int n = 0;
+        for (Square s : occupied) {
+            const Piece q = pos.pieceAt(s);
+            if (q.type() != PieceType::Pawn) continue;
+            const int id = threats::pawn_pair_id(persp, static_cast<int>(q.color()),
+                                                 static_cast<int>(s), ksq);
+            if (id >= 0 && n < 16) ids[n++] = id;
+        }
+        for (int a = 0; a < n; ++a)
+            for (int b = a + 1; b < n; ++b) {
+                const int idx = threats::encode_pawn_pair(T, ids[a], ids[b]);
+                if (idx < 0) continue;
+                if (k >= MAX_ACTIVE) { warn_truncate(); return {k, T.NUM_INPUTS}; }
+                features[k] = idx;
+                values[k]   = 1.0f;
+                ++k;
+            }
+    }
+
     return {k, T.NUM_INPUTS};
 }
 

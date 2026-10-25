@@ -25,6 +25,16 @@ echo "PGO_DIR: $PGO_DIR"
 echo "PGO_INPUT: $PGO_INPUT"
 
 echo "Cleaning previous build and profile data..."
+# The previous DLL is about to be deleted along with $BUILD_DIR. On a box that is training,
+# or that may need to RESUME an arm, that window matters: nothing can train without this
+# library. Keep a copy outside the build dir, which is where a backup put *inside* it went
+# on 2026-10-25.
+if [ -f "$BUILD_DIR/training_data_loader.dll" ] || [ -f "$BUILD_DIR/training_data_loader.so" ]; then
+  mkdir -p "$ROOT_DIR/.loader-backup"
+  cp "$BUILD_DIR"/training_data_loader.* "$ROOT_DIR/.loader-backup/" 2>/dev/null || true
+  echo "previous loader backed up to $ROOT_DIR/.loader-backup"
+fi
+
 rm -rf "$BUILD_DIR" "$PGO_DIR"
 
 echo "Configuring PGO_Generate build..."
@@ -33,6 +43,34 @@ cmake -S "$SRC_DIR" -B "$BUILD_DIR" \
   -DPGO_PROFILE_DATA_DIR="$ROOT_DIR/$PGO_DIR" \
   -DPGO_INPUT="$PGO_INPUT" \
   -DLIB_COPY_DIR="$ROOT_DIR"
+
+# ---- STOP if the generator is MULTI-CONFIG -------------------------------------------
+# Found 2026-10-25 on PC1. This script is written for a SINGLE-config generator (Ninja,
+# Makefiles), where CMAKE_BUILD_TYPE selects the build and `cmake --build` needs no
+# --config. Under the Visual Studio generator none of that holds:
+#   * CMAKE_BUILD_TYPE is IGNORED;
+#   * PGO_Generate / PGO_Use are not registered configurations at all
+#     (CMAKE_CONFIGURATION_TYPES is Debug;Release;MinSizeRel;RelWithDebInfo);
+#   * `cmake --build` with no --config therefore builds DEBUG.
+# The script then printed "PGO build complete." and exited 0, having produced a 2.2 MB
+# DEBUG dll in build/Debug/ -- not where the python loader looks, with no PGO, and
+# catastrophically slower than the 0.5 MB optimised one. Silent, and it would have shown
+# up only as unexplained dataloader throughput.
+if grep -q '^CMAKE_CONFIGURATION_TYPES' "$BUILD_DIR/CMakeCache.txt" 2>/dev/null; then
+  cfgs=$(grep '^CMAKE_CONFIGURATION_TYPES' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2)
+  echo "ERROR: multi-config generator detected (configurations: $cfgs)." >&2
+  echo "       PGO_Generate / PGO_Use are not configurations there, so this script would" >&2
+  echo "       silently build Debug. Refusing rather than producing a Debug loader." >&2
+  echo "" >&2
+  echo "       For PGO install a single-config generator and re-run, e.g.:" >&2
+  echo "           cmake -S $SRC_DIR -B $BUILD_DIR -G Ninja ..." >&2
+  echo "       For an optimised NON-PGO loader right now:" >&2
+  echo "           cmake -S $SRC_DIR -B $BUILD_DIR -DLIB_COPY_DIR=\"$ROOT_DIR\"" >&2
+  echo "           cmake --build $BUILD_DIR --config Release -j" >&2
+  echo "           cp $BUILD_DIR/Release/training_data_loader.* $BUILD_DIR/" >&2
+  echo "       (the python loader globs ./build/*training_data_loader.*, NOT build/Release)" >&2
+  exit 1
+fi
 
 echo "Building instrumented default targets..."
 cmake --build "$BUILD_DIR" -j

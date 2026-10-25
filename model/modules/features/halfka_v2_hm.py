@@ -1,8 +1,20 @@
+import os
+
 import chess
 import torch
 from torch import nn
 
 from .input_feature import InputFeature
+
+# Q[2]K[32] QUEEN PHASE (Chris, 2026-10-25). The king bucket is prefixed with a
+# queen-presence flag, so the space doubles: bucket = Q*32 + king_bucket, with Q = 1 if
+# EITHER side has at least one queen.
+#
+# MUST match the data loader, which reads the SAME env var at runtime
+# (training_data_loader.cpp, queen_phase_on()). One variable for both sides, deliberately:
+# ThreatsV1's equivalent is a -D define in C++ and an env var in Python, and its own comment
+# warns nothing checks they agree. Default OFF, so every existing net stays reproducible.
+_QUEEN_PHASE = os.environ.get("CST_QUEEN_PHASE", "0") == "1"
 
 
 # fmt: off
@@ -38,7 +50,10 @@ def _halfka_idx(is_white_pov: bool, king_sq: int, sq: int, p: chess.Piece) -> in
 
 
 class HalfKav2Hm(InputFeature):
-    HASH = 0x7F234CB8
+    # HASH separates incompatible feature spaces, as ThreatsV1's does. XOR with ord('Q')
+    # marks the queen-phase space so a 32-bucket net and a 64-bucket net can never be
+    # mistaken for each other.
+    HASH = 0x7F234CB8 ^ (0x51 if _QUEEN_PHASE else 0x00)
     FEATURE_NAME = "HalfKAv2_hm^"
     INPUT_FEATURE_NAME = "HalfKAv2_hm"
     MAX_ACTIVE_FEATURES = 32
@@ -46,12 +61,13 @@ class HalfKav2Hm(InputFeature):
     NUM_SQ = 64
     NUM_PT = 12
     NUM_PLANES = NUM_SQ * NUM_PT  # 768
-    NUM_BUCKETS = NUM_SQ // 2  # 32
-    NUM_INPUTS = NUM_PLANES * NUM_BUCKETS  # 24,576
+    # 32, or 64 under the queen phase: Q*32 + king_bucket
+    NUM_BUCKETS = (NUM_SQ // 2) * (2 if _QUEEN_PHASE else 1)
+    NUM_INPUTS = NUM_PLANES * NUM_BUCKETS  # 24,576, or 49,152
     NUM_INPUTS_VIRTUAL = NUM_PLANES  # 768
 
-    # Export size uses 11 piece types (704 * 32 = 22,528)
-    NUM_REAL_FEATURES = 704 * 32  # 22,528
+    # Export size uses 11 piece types (704 per bucket)
+    NUM_REAL_FEATURES = 704 * NUM_BUCKETS  # 22,528, or 45,056
 
     def __init__(self, num_outputs: int):
         super().__init__()
@@ -79,10 +95,25 @@ class HalfKav2Hm(InputFeature):
         """Initialize virtual weights to zero and set PSQT columns."""
         self.virtual_weight.zero_()
 
+        # PSQT ablated (CST_NO_PSQT -> PSQT_BUCKETS 0): there are no PSQT columns to seed.
+        # NOTE what goes with them: the seeding below is a HAND-SET MATERIAL PRIOR
+        # (halfka_psqts: P 126, N 781, B 825, R 1276, Q 2538). Ablating PSQT therefore does
+        # not merely drop an output term, it removes the material head start, and the body
+        # must learn material from nothing. Expect slower early convergence.
+        if num_psqt_buckets == 0:
+            return
+
         scale = 1.0 / nnue2score
         L1 = self.num_outputs - num_psqt_buckets
 
         initial_values = self.halfka_psqts()
+        # halfka_psqts() emits one value per 32-bucket slot. Under the queen phase the space
+        # is doubled, and a piece's material value does not depend on Q, so the same block is
+        # tiled across both halves.
+        if len(initial_values) != self.NUM_INPUTS:
+            reps, rem = divmod(self.NUM_INPUTS, len(initial_values))
+            assert rem == 0, "halfka_psqts() does not tile into NUM_INPUTS"
+            initial_values = initial_values * reps
         assert len(initial_values) == self.NUM_INPUTS
 
         new_weights = (
@@ -124,7 +155,10 @@ class HalfKav2Hm(InputFeature):
             own_king_src = src_offset + 10 * 64
             opp_king_src = src_offset + 11 * 64
             dst_king = dst_offset + 10 * 64
-            ksq = InverseKingBuckets[b]
+            # b % 32: under the queen phase buckets 32..63 are the SAME king buckets with
+            # Q=1, so the king square for bucket b is the one for b mod 32. Without the
+            # modulo this indexes off the end of a 32-entry table.
+            ksq = InverseKingBuckets[b % 32]
 
             export[dst_king : dst_king + 64] = coalesced[
                 opp_king_src : opp_king_src + 64
@@ -154,7 +188,7 @@ class HalfKav2Hm(InputFeature):
 
             # Split merged king block back into p_idx 10 and 11
             src_king = src_offset + 10 * 64
-            ksq = InverseKingBuckets[b]
+            ksq = InverseKingBuckets[b % 32]   # see get_export_weights
 
             # Own king: only weight at ksq matters (rest stays zero)
             expanded[dst_offset + 10 * 64 + ksq] = export_weight[src_king + ksq]

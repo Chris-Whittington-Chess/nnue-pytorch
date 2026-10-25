@@ -7,6 +7,7 @@
 #include <future>
 #include <random>
 #include <cstring>
+#include <cstdlib>
 #include <cmath>
 
 #include "lib/rng.h"
@@ -27,14 +28,56 @@ static Square orient_flip_2(Color color, Square sq, Square ksq) {
     return sq;
 }
 
+// Q[2]K[32] -- QUEEN PHASE (Chris, 2026-10-25).
+//
+// The HalfKA king-bucket index is prefixed with a queen-presence flag, so the net is told
+// whether queens exist on the board:  bucket = Q * 32 + king_bucket,  and the HalfKA input
+// space doubles 24,576 -> 49,152.  Q = 1 if EITHER side has at least one queen.
+// Precedent: CST 2.07's v21 net is "16 king zones x 2 phase input sets (phase = a queen on
+// the board)" -- the same idea at different geometry.
+//
+// RUNTIME switch, deliberately NOT a compile-time define. ThreatsV1's pawn-reciprocity prune
+// is gated by -DPAWN_RECIPROCITY_PRUNE here and by CST_PAWN_PRUNE in Python, and its own
+// comment warns that nothing checks the two agree: "get it wrong one way and 1176 columns
+// train dead, the other way and indices overflow", caught only by the engine after a whole
+// training run. One env var read by both sides cannot drift like that. The flag is read once;
+// the only per-position cost is the queen test, which the bucket index needs anyway.
+//
+// DEFAULT OFF, so every existing net, every in-flight resume and every published bench stays
+// bit-identical.
+static bool queen_phase_on() {
+    static const bool on = [] {
+        const char* e = std::getenv("CST_QUEEN_PHASE");
+        return e != nullptr && e[0] == '1';
+    }();
+    return on;
+}
+
+// -> 32 when the flag is on AND the position has a queen, else 0. ADDED to the king bucket,
+// so the value is the base bucket count.
+static int queen_phase_bucket(const Position& pos) {
+    if (!queen_phase_on())
+        return 0;
+    const bool q = (pos.piecesBB(Piece(PieceType::Queen, Color::White))
+                  | pos.piecesBB(Piece(PieceType::Queen, Color::Black))).any();
+    return q ? 32 : 0;
+}
+
 struct HalfKAv2_hm {
     static constexpr std::string_view NAME = "HalfKAv2_hm";
 
     static constexpr int NUM_SQ              = 64;
     static constexpr int NUM_PT              = 12;
     static constexpr int NUM_PLANES          = NUM_SQ * NUM_PT;
-    static constexpr int INPUTS              = NUM_PLANES * NUM_SQ / 2;
+    static constexpr int NUM_BUCKETS         = NUM_SQ / 2;                // 32
+    static constexpr int INPUTS              = NUM_PLANES * NUM_BUCKETS;  // 24,576
+    static constexpr int INPUTS_QP           = INPUTS * 2;                // 49,152 (Q[2]K[32])
     static constexpr int MAX_ACTIVE_FEATURES = 32;
+
+    // The input count the PYTHON model must allocate for. Runtime, because reporting the
+    // doubled count with the flag OFF would leave half the rows training dead and would
+    // change the parameter count, which breaks the resume of every in-flight arm.
+    static int inputs_now() { return queen_phase_on() ? INPUTS_QP : INPUTS; }
 
     // clang-format off
     static constexpr int KingBuckets[64] = {
@@ -49,11 +92,13 @@ struct HalfKAv2_hm {
     };
     // clang-format on
 
-    static int feature_index(Color color, Square ksq, Square sq, Piece p) {
+    // qbucket is 0 or NUM_BUCKETS (32), computed ONCE per position by queen_phase_bucket().
+    // With the flag off it is always 0 and this is the original expression exactly.
+    static int feature_index(Color color, Square ksq, Square sq, Piece p, int qbucket) {
         Square o_ksq = orient_flip_2(color, ksq, ksq);
         auto   p_idx = static_cast<int>(p.type()) * 2 + (p.color() != color);
         return static_cast<int>(orient_flip_2(color, sq, ksq)) + p_idx * NUM_SQ
-             + KingBuckets[static_cast<int>(o_ksq)] * NUM_PLANES;
+             + (KingBuckets[static_cast<int>(o_ksq)] + qbucket) * NUM_PLANES;
     }
 
     static std::pair<int, int>
@@ -62,20 +107,24 @@ struct HalfKAv2_hm {
         auto  pieces = pos.piecesBB();
         auto  ksq    = pos.kingSquare(color);
 
+        // One queen test per position, not per piece. Both perspectives get the SAME
+        // qbucket: Q is a property of the board, not of the point of view.
+        const int qbucket = queen_phase_bucket(pos);
+
         int j = 0;
         for (Square sq : pieces)
         {
             auto p      = pos.pieceAt(sq);
             values[j]   = 1.0f;
-            features[j] = feature_index(color, ksq, sq, p);
+            features[j] = feature_index(color, ksq, sq, p, qbucket);
             ++j;
         }
-        return {j, INPUTS};
+        return {j, inputs_now()};
     }
 };
 
 struct HalfKAv2_hmExtractor: IFeatureExtractor {
-    int inputs() const override { return HalfKAv2_hm::INPUTS; }
+    int inputs() const override { return HalfKAv2_hm::inputs_now(); }
     int max_active_features() const override { return HalfKAv2_hm::MAX_ACTIVE_FEATURES; }
     std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e,
                                              int*                     features,
@@ -457,8 +506,14 @@ void SparseBatch::fill_entry(const IFeatureExtractor& fs, int i, const TrainingD
     is_white[i]            = static_cast<float>(e.pos.sideToMove() == Color::White);
     outcome[i]             = (e.result + 1.0f) / 2.0f;
     score[i]               = e.score;
-    psqt_indices[i]        = (e.pos.piecesBB().count() - 1) / 4;
-    layer_stack_indices[i] = psqt_indices[i];
+    // Q[2]K[32]: the OUTPUT bucket gets the same queen flag, 8 phases -> 16.
+    // psqt_indices stays 0..7 -- it is PSQT's own bucket, PSQT is being ablated, and the
+    // engine's PSQT kernel hard-asserts 8 buckets in one register (CStal-5 nnue.cpp:573),
+    // so it must never be handed 8..15. These two were the SAME number before this change;
+    // they are now deliberately different and must not be re-coupled.
+    const int pc_bucket    = (e.pos.piecesBB().count() - 1) / 4;
+    psqt_indices[i]        = pc_bucket;
+    layer_stack_indices[i] = pc_bucket + (queen_phase_bucket(e.pos) ? 8 : 0);
     fill_features(fs, i, e);
 }
 

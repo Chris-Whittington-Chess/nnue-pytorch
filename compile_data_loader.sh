@@ -37,12 +37,23 @@ fi
 
 rm -rf "$BUILD_DIR" "$PGO_DIR"
 
+# ENCODER OPTIONS DECIDE THE STAMP EVERY EXPORTED NET CARRIES, and the CMakeLists default
+# is NOT production's. SAFECHECK_FEATURES defaults to ON (EngineThreats 7 blocks,
+# ThreatsV1nkET7fp); the engine expects OFF (5 blocks, ThreatsV1nkET5fp, fnv1a32 =
+# 2520498150). A loader built with the default still produces CORRECT features -- verified
+# bit-identical on a deterministic stream -- but stamps every exported net 1800157232, and
+# the engine then refuses all of them: 'encoder stamp is not ThreatsV1nkET5fp'. Found on
+# PC1 2026-10-25, before a 400-epoch arm was wasted on nets nothing could load.
+# Verify after building, with tools/check_loader_stamp.py or by hand:
+#     ctypes.CDLL('build/training_data_loader.dll').nnue_encoder_variant_id()
+SAFECHECK=${SAFECHECK:--DSAFECHECK_FEATURES=OFF}
+
 echo "Configuring PGO_Generate build..."
 cmake -S "$SRC_DIR" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=PGO_Generate \
   -DPGO_PROFILE_DATA_DIR="$ROOT_DIR/$PGO_DIR" \
   -DPGO_INPUT="$PGO_INPUT" \
-  -DLIB_COPY_DIR="$ROOT_DIR"
+  -DLIB_COPY_DIR="$ROOT_DIR" $SAFECHECK
 
 # ---- STOP if the generator is MULTI-CONFIG -------------------------------------------
 # Found 2026-10-25 on PC1. This script is written for a SINGLE-config generator (Ninja,
@@ -95,7 +106,7 @@ cmake -S "$SRC_DIR" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=PGO_Use \
   -DPGO_PROFILE_DATA_DIR="$ROOT_DIR/$PGO_DIR" \
   -DCMAKE_INSTALL_PREFIX="./" \
-  -DLIB_COPY_DIR="$ROOT_DIR"
+  -DLIB_COPY_DIR="$ROOT_DIR" $SAFECHECK
 
 echo "Building default targets with profile data..."
 cmake --build "$BUILD_DIR" -j

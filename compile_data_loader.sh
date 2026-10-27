@@ -74,12 +74,16 @@ if grep -q '^CMAKE_CONFIGURATION_TYPES' "$BUILD_DIR/CMakeCache.txt" 2>/dev/null;
   echo "       silently build Debug. Refusing rather than producing a Debug loader." >&2
   echo "" >&2
   echo "       For PGO install a single-config generator and re-run, e.g.:" >&2
-  echo "           cmake -S $SRC_DIR -B $BUILD_DIR -G Ninja ..." >&2
+  echo "           cmake -S $SRC_DIR -B $BUILD_DIR -G Ninja $SAFECHECK ..." >&2
   echo "       For an optimised NON-PGO loader right now:" >&2
-  echo "           cmake -S $SRC_DIR -B $BUILD_DIR -DLIB_COPY_DIR=\"$ROOT_DIR\"" >&2
+  echo "           cmake -S $SRC_DIR -B $BUILD_DIR -DLIB_COPY_DIR=\"$ROOT_DIR\" $SAFECHECK" >&2
   echo "           cmake --build $BUILD_DIR --config Release -j" >&2
   echo "           cp $BUILD_DIR/Release/training_data_loader.* $BUILD_DIR/" >&2
   echo "       (the python loader globs ./build/*training_data_loader.*, NOT build/Release)" >&2
+  echo "       ^ $SAFECHECK is NOT optional: SAFECHECK_FEATURES defaults to ON in the" >&2
+  echo "         CMakeLists, and an ON loader produces entirely correct features but stamps" >&2
+  echo "         every net 1800157232 where the engine expects 2520498150 -- and the engine" >&2
+  echo "         then refuses all of them, which you discover at the END of the arm." >&2
   exit 1
 fi
 
